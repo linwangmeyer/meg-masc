@@ -112,7 +112,7 @@ def _get_epochs(raw):
     return epochs
 
 #################################################
-## Get epochs
+## Get epochs for all sessions and all tasks
 subject='01'
 all_epochs = list()
 for session in range(1):
@@ -124,3 +124,14 @@ for session in range(1):
 epochs = mne.concatenate_epochs(all_epochs)
 epochs_fname = my_path + f"/Segments/sub{subject}"
 epochs.save(epochs_fname,overwrite=True)
+
+## Get epochs for each session and each task
+subject='01'
+for session in range(1):
+    for task in range(4):
+        raw = _get_raw(subject,session,task)
+        raw_clean = _clean_raw(raw)
+        epochs = _get_epochs(raw)
+        all_epochs.append(epochs)
+        epochs_fname = my_path + f"/Segments/sub{subject}_session{session}_task{task}"
+        epochs.save(epochs_fname,overwrite=True)
