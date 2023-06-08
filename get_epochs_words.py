@@ -6,6 +6,9 @@ from mne.preprocessing import ICA, corrmap, create_ecg_epochs, create_eog_epochs
 import numpy as np
 import pandas as pd
 from tqdm import trange
+import nltk
+from nltk.tokenize import word_tokenize
+nltk.download('averaged_perceptron_tagger')
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
@@ -13,7 +16,7 @@ import matplotlib
 
 matplotlib.use("TkAgg")
 
-my_path = '/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
+my_path = '/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG'
 sub_path = my_path + "/bids_anonym"
 subjects = pd.read_csv(sub_path+"/participants.tsv", sep="\t")
 subjects = subjects.participant_id.apply(lambda x: x.split("-")[1]).values
@@ -77,6 +80,15 @@ def _get_epochs(raw):
     words = meta.query('kind=="word"').copy()
     meta_words = words[['story','story_uid','sound_id','sound','onset','duration','word_index','word']]
     
+    # Word length
+    meta_words['NumberOfLetters'] = meta_words['word'].apply(lambda x: len(x))
+
+    # Word syntactic category
+    meta_words['tokens'] = meta_words['word'].apply(lambda x: word_tokenize(x))
+    meta_words['pos_tags'] = meta_words['tokens'].apply(lambda x: nltk.pos_tag(x))
+    content_word_categories = ['NN', 'NNS', 'VB', 'VBD', 'VBG', 'VBN', 'VBP', 'VBZ', 'JJ', 'JJR', 'JJS', 'RB', 'RBR', 'RBS']
+    meta_words['word_category'] = meta_words['pos_tags'].apply(lambda x: 'Content' if any(tag[1] in content_word_categories for tag in x) else 'Functional')
+
     # segment epochs for each word
     events = np.c_[
         meta_words.onset * raw.info["sfreq"], np.ones((len(meta_words), 2))
@@ -103,13 +115,12 @@ def _get_epochs(raw):
 ## Get epochs
 subject='01'
 all_epochs = list()
-for session in range(2):
+for session in range(1):
     for task in range(4):
         raw = _get_raw(subject,session,task)
         raw_clean = _clean_raw(raw)
         epochs = _get_epochs(raw)
         all_epochs.append(epochs)
 epochs = mne.concatenate_epochs(all_epochs)
-epochs_path = my_path + "/epochs"
-epochs.save(epochs_path,overwritebool=True)
-
+epochs_fname = my_path + f"/Segments/sub{subject}"
+epochs.save(epochs_fname,overwrite=True)
