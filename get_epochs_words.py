@@ -1,4 +1,4 @@
-# Read in data of interest
+## Get epochs and words
 
 import mne
 import mne_bids
@@ -112,22 +112,4 @@ for session in range(2):
 epochs = mne.concatenate_epochs(all_epochs)
 epochs_path = my_path + "/epochs"
 epochs.save(epochs_path,overwritebool=True)
-
-
-#################################################
-data = epochs._get_data() #trial*chan*time
-words = epochs.metadata['word']
-
-# get clean epochs for each subject
-subject = '01'
-epochs = _get_epochs(subject)
-
-###########################################################
-# Check evoked activity modulated by word length
-epochs.metadata['NumberOfLetters'] = epochs.metadata['word'].apply(lambda x: len(x))
-evokeds = dict()
-query = "NumberOfLetters == {}"
-for n_letters in epochs.metadata["NumberOfLetters"].unique():
-    evokeds[str(n_letters)] = epochs[query.format(n_letters)].average()
-mne.viz.plot_compare_evokeds(evokeds, cmap=("word length", "viridis"), picks="MEG 011")
 
