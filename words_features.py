@@ -4,12 +4,17 @@ import mne
 import pandas as pd
 import numpy as np
 import nltk
+from wordfreq import zipf_frequency
 import mne_rsa
 from matplotlib import pyplot as plt
 import gensim.downloader as api
 model = api.load("word2vec-google-news-300")
 from scipy.spatial.distance import pdist
 
+def get_wordfreq(epochs):
+    wfreq = lambda x: zipf_frequency(x, "en")
+    epochs.metadata['word_freq'] = epochs.metadata['word'].apply(wfreq)
+    
 # get word2vec representation for each word
 def get_word2vec(epochs):
     new_epochs = epochs[epochs.metadata['word_category']=='Content']
