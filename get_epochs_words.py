@@ -13,10 +13,11 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 import matplotlib
+import os
 
 matplotlib.use("TkAgg")
 
-my_path = '/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG'
+my_path = my_path = r'\\rstore.uit.tufts.edu\as_rsch_NCL02$\USERS\Lin\MASC-MEG'
 sub_path = my_path + "/bids_anonym"
 subjects = pd.read_csv(sub_path+"/participants.tsv", sep="\t")
 subjects = subjects.participant_id.apply(lambda x: x.split("-")[1]).values
@@ -36,12 +37,14 @@ def _get_raw(subject,session,task):
 
 
 def _clean_raw(raw):
-    raw.load_data().filter(0.1, 30.0, n_jobs=1)
+    raw.load_data().filter(0.1, 30.0, n_jobs=2)
     
-    # Identify back sensors by clicking on the channels
+    '''# Identify back sensors by clicking on the channels
     raw.plot()
     print(raw.info['bads'])
-    plt.show()
+    plt.show()'''
+    bad_chan = ['MEG 067', 'MEG 079', 'MEG 148', 'MEG 183'] #identified based on visual inspections
+    raw.info['bads'] = bad_chan
     
     # ICA
     filt_raw = raw.copy().filter(l_freq=1.0, h_freq=None)
@@ -111,7 +114,7 @@ def _get_epochs(raw):
 
     return epochs
 
-#################################################
+'''#################################################
 ## Get epochs for all sessions and all tasks
 subject='01'
 all_epochs = list()
@@ -133,5 +136,50 @@ for session in range(1):
         raw_clean = _clean_raw(raw)
         epochs = _get_epochs(raw)
         all_epochs.append(epochs)
-        epochs_fname = my_path + f"/Segments/sub{subject}_session{session}_task{task}"
-        epochs.save(epochs_fname,overwrite=True)
+    epochs_fname = my_path + f"/Segments/sub{subject}_session{session}"
+    epochs.save(epochs_fname,overwrite=True)
+'''
+
+#################################################
+'''## Get raw data for all sessions and all tasks
+subjects = range(1,28) #sub03, 12, 16, 20, 21, don't have session1; 25: no session0
+for i in subjects:
+    subject = str(i).zfill(2)
+    all_raw = list()
+    for session in range(2):
+        for task in range(4):
+            raw = _get_raw(subject,session,task)
+            all_raw.append(raw)
+        raws = mne.concatenate_raws(all_raw)
+        raws_fname = my_path + f"/Raws/session{session}_sub{subject}.fif"
+        raws.save(raws_fname,overwrite=True)
+'''
+## Clean raw
+subjects = range(6,28)
+for i in subjects:
+    subject = str(i).zfill(2)
+    for session in range(1):
+        raws_fname = my_path + f"/Raws/session{session}_sub{subject}.fif"
+        if os.path.exists(raws_fname):
+            raw = mne.io.read_raw_fif(raws_fname)
+            raw_clean = _clean_raw(raw)
+            raw_clean_fname = my_path + f"/Raws_clean/session{session}_sub{subject}.fif"
+            raw_clean.save(raw_clean_fname,overwrite=True)
+            print(f'------session{session} of subject{subject} is done!')
+            del raw, raw_clean
+            print(f"File {raws_fname} does not exist.")
+
+## For epochs
+subjects = range(1,28)
+for i in subjects:
+    subject = str(i).zfill(2)
+    for session in range(2):
+        raw_clean_fname = my_path + f"/Raws_clean/session{session}_sub{subject}.fif"
+        if os.path.exists(raw_clean_fname):
+            raw_clean = mne.io.read_raw_fif(raw_clean_fname)
+            epochs = _get_epochs(raw_clean)
+            epochs_fname = my_path + f"/Segments/session{session}_sub{subject}"
+            epochs.save(epochs_fname,overwrite=True)
+            print(f'------session{session} of subject{subject} is done!')
+        else:
+            print(f"File {raw_clean_fname} does not exist.")
