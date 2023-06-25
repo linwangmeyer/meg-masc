@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from tqdm import trange
 import nltk
+nltk.download('punkt')
 from nltk.tokenize import word_tokenize
 nltk.download('averaged_perceptron_tagger')
 import matplotlib.pyplot as plt
@@ -72,11 +73,12 @@ def _get_epochs(raw):
     # Preproc annotations to prepare for event info
     meta = list()
     for annot in raw.annotations:
-        d = eval(annot.pop("description"))
-        for k, v in annot.items():
-            assert k not in d.keys()
-            d[k] = v
-        meta.append(d)
+        if annot['description'] != 'BAD boundary' and annot['description'] != 'EDGE boundary':
+            d = eval(annot.pop("description"))
+            for k, v in annot.items():
+                assert k not in d.keys()
+                d[k] = v
+            meta.append(d)
     meta = pd.DataFrame(meta)
 
     # get word information
@@ -108,10 +110,7 @@ def _get_epochs(raw):
         preload=True,
         event_repeated="drop",
     )
-
-    # baseline correction
-    epochs.apply_baseline()
-
+    
     return epochs
 
 '''#################################################
@@ -170,7 +169,7 @@ for i in subjects:
             print(f"File {raws_fname} does not exist.")
 
 ## For epochs
-subjects = range(1,28)
+subjects = range(1,12)
 for i in subjects:
     subject = str(i).zfill(2)
     for session in range(2):
