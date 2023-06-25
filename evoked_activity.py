@@ -11,6 +11,7 @@ my_path = my_path = r'\\rstore.uit.tufts.edu\as_rsch_NCL02$\USERS\Lin\MASC-MEG'
 subject='01'
 epochs_fname = my_path + f"/Segments/sub{subject}"
 epochs = mne.read_epochs(epochs_fname)
+epochs.apply_baseline() #baseline correction
 
 ###########################################################
 # Check evoked activity modulated by word length for content words
