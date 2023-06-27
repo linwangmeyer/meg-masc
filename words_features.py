@@ -4,16 +4,24 @@ import mne
 import pandas as pd
 import numpy as np
 import nltk
+from wordfreq import zipf_frequency
 import mne_rsa
 from matplotlib import pyplot as plt
 import gensim.downloader as api
 model = api.load("word2vec-google-news-300")
 from scipy.spatial.distance import pdist
 
-# get word2vec representation for each word
+def get_wordfreq(epochs):
+    '''get word frequency'''
+    wfreq = lambda x: zipf_frequency(x, "en")
+    epochs.metadata['word_freq'] = epochs.metadata['word'].apply(wfreq)
+    return epochs
+    
+
 def get_word2vec(epochs):
-    new_epochs = epochs[epochs.metadata['word_category']=='Content']
-    word_list = new_epochs.metadata['word'].tolist()
+    '''get word2vec representation for each word'''
+    #new_epochs = epochs[epochs.metadata['word_category']=='Content']
+    word_list = epochs.metadata['word'].tolist()
     word_vectors = []
     for word in word_list:
         try:
@@ -21,13 +29,13 @@ def get_word2vec(epochs):
             word_vectors.append(vector)
         except KeyError:
             word_vectors.append(np.nan)
-    new_epochs.metadata['w2v'] = word_vectors
-    select_epochs = new_epochs[new_epochs.metadata['w2v'].notna()]
-    
-    return select_epochs
+    epochs.metadata['w2v'] = word_vectors
+    epochs = epochs[epochs.metadata['w2v'].notna()]
+    return epochs
 
-# calculate model RDMs (dsms)
+
 def Model_DSM(select_epochs,var=str):
+    '''get pairwise similarity for a variable of interest'''
     metadata = select_epochs.metadata
     if len(metadata[var].values[0].shape) == 0:
         num_letters = metadata[var].values
@@ -40,13 +48,13 @@ def Model_DSM(select_epochs,var=str):
         word2vec_matrix = np.vstack(word2vec_array)
         dsm = pdist(word2vec_matrix, metric='cosine')
     else:
-        dsm=None
-        
+        dsm=None   
     return dsm
 
 
-# calculate MEG data RDMs: time*trialpair
+
 def generate_meg_dsms(select_epochs):
+    '''calculate MEG data RDMs using spatial information: time*trialpair'''
     meg_data = select_epochs.get_data()
     n_trials, n_sensors, n_times = meg_data.shape
     data_dsm = []
@@ -54,7 +62,6 @@ def generate_meg_dsms(select_epochs):
         dsm = mne_rsa.compute_dsm(meg_data[:, :, i], metric='correlation')
         data_dsm.append(dsm)
     data_dsm = np.array(data_dsm)
-    
     return data_dsm
 
 
@@ -89,22 +96,25 @@ def MEG_DSM_onevar(dsm, data_dsm, operation=str):
 
 
 #########################################################################
-## Get MEG data and corresponding words 
-my_path = '/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG'
+## Get MEG data and corresponding words
+my_path = my_path = r'\\rstore.uit.tufts.edu\as_rsch_NCL02$\USERS\Lin\MASC-MEG'
 subject='01'
 epochs_fname = my_path + f"/Segments/sub{subject}"
 epochs = mne.read_epochs(epochs_fname)
 epochs.drop_channels(epochs.info['bads']) #drop bad channels
-select_epochs = get_word2vec(epochs)
+epochs = get_wordfreq(epochs)
+epochs = get_word2vec(epochs)
 
-dsm = Model_DSM(select_epochs,var='w2v')
-data_dsm = generate_meg_dsms(select_epochs)
+dsm = Model_DSM(epochs,var='w2v')
+data_dsm = generate_meg_dsms(epochs)
 
-np.random.seed(42)
+'''np.random.seed(42)
 random_indices = np.random.choice(dsm.shape[0], size=5000, replace=False)
 selected_dsm = dsm[random_indices]
 selected_data_dsm = data_dsm[:, random_indices]
-
+'''
+selected_dsm = dsm
+selected_data_dsm = data_dsm
 rsa_n = MEG_DSM_onevar(selected_dsm, selected_data_dsm, 'rsa_n')
 rsa_nplus = MEG_DSM_onevar(selected_dsm, selected_data_dsm, 'rsa_nplus')
 rsa_nminus = MEG_DSM_onevar(selected_dsm, selected_data_dsm, 'rsa_nminus')
