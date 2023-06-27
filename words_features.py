@@ -16,11 +16,25 @@ def get_wordfreq(epochs):
     wfreq = lambda x: zipf_frequency(x, "en")
     epochs.metadata['word_freq'] = epochs.metadata['word'].apply(wfreq)
     return epochs
-    
 
+def get_contents(epochs):
+    '''get epochs with content words'''
+    new_epochs = epochs[epochs.metadata['word_category']=='Content']
+    return new_epochs
+
+
+def get_consecutive_contents(epochs):
+    '''get epochs with three content words in a row'''
+    word_category_array = np.array([epoch.metadata['word_category'] for epoch in epochs])
+    mask = np.logical_and(word_category_array[:-2] == 'Content',
+                        word_category_array[1:-1] == 'Content',
+                        word_category_array[2:] == 'Content')
+    filtered_epochs = [epoch for epoch, is_filtered in zip(epochs, mask) if not is_filtered]
+    return filtered_epochs
+
+    
 def get_word2vec(epochs):
     '''get word2vec representation for each word'''
-    #new_epochs = epochs[epochs.metadata['word_category']=='Content']
     word_list = epochs.metadata['word'].tolist()
     word_vectors = []
     for word in word_list:
@@ -102,8 +116,10 @@ subject='01'
 epochs_fname = my_path + f"/Segments/sub{subject}"
 epochs = mne.read_epochs(epochs_fname)
 epochs.drop_channels(epochs.info['bads']) #drop bad channels
-epochs = get_wordfreq(epochs)
-epochs = get_word2vec(epochs)
+epochs.apply_baseline() #baseline correction
+epochs = get_consecutive_contents(epochs) #filter epochs: only keep trials with three consecutive content words
+epochs = get_wordfreq(epochs) #get word frequency metadata
+epochs = get_word2vec(epochs) #get word2vec vectors metadata
 
 dsm = Model_DSM(epochs,var='w2v')
 data_dsm = generate_meg_dsms(epochs)
