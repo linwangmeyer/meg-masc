@@ -1,0 +1,14 @@
+no change     /cluster/tufts/hpc/tools/anaconda/202111/condabin/conda
+no change     /cluster/tufts/hpc/tools/anaconda/202111/bin/conda
+no change     /cluster/tufts/hpc/tools/anaconda/202111/bin/conda-env
+no change     /cluster/tufts/hpc/tools/anaconda/202111/bin/activate
+no change     /cluster/tufts/hpc/tools/anaconda/202111/bin/deactivate
+no change     /cluster/tufts/hpc/tools/anaconda/202111/etc/profile.d/conda.sh
+no change     /cluster/tufts/hpc/tools/anaconda/202111/etc/fish/conf.d/conda.fish
+no change     /cluster/tufts/hpc/tools/anaconda/202111/shell/condabin/Conda.psm1
+no change     /cluster/tufts/hpc/tools/anaconda/202111/shell/condabin/conda-hook.ps1
+no change     /cluster/tufts/hpc/tools/anaconda/202111/lib/python3.9/site-packages/xontrib/conda.xsh
+no change     /cluster/tufts/hpc/tools/anaconda/202111/etc/profile.d/conda.csh
+no change     /cluster/home/lwang11/.bashrc
+No action taken.
+Job completed!
