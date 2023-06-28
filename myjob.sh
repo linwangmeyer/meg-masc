@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=jupyter_job
+#SBATCH --job-name=python_job
 #SBATCH --time=01-00:20:00  #requested time 1 day and 20 minutes
 #SBATCH -p batch    #running on "batch" partition/queue
 #SBATCH -N 1    #1 nodes
@@ -14,10 +14,13 @@
 #load anaconda module
 module load /cluster/tufts/hpc/tools/anaconda/202111
 
+#initialize the shell to use conda
+conda init bash
+
 #activate conda environment, if you use locally installed conda env, make sure use the full path to the env
 conda activate /cluster/tufts/kuperberglab/lwang11/condaenv/mne
 
-python 01_get_epochs_words.py #make sure the results and data generated from your scripts are saved to files
+python 02_filter_epochs.py #make sure the results and data generated from your scripts are saved to files
 
 echo "Job completed!"
 
