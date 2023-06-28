@@ -154,7 +154,7 @@ for i in subjects:
         raws.save(raws_fname,overwrite=True)
 '''
 ## Clean raw
-subjects = range(6,28)
+subjects = range(12,28)
 for i in subjects:
     subject = str(i).zfill(2)
     for session in range(1):
@@ -169,7 +169,7 @@ for i in subjects:
             print(f"File {raws_fname} does not exist.")
 
 ## For epochs
-subjects = range(1,12)
+subjects = range(12,28)
 for i in subjects:
     subject = str(i).zfill(2)
     for session in range(2):
