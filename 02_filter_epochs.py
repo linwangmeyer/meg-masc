@@ -1,4 +1,4 @@
-# RSA to words n, n+1 and n-1
+# get epochs for consecutive content trials: words n, n+1 and n-1
 import json
 import mne
 import pandas as pd
@@ -11,17 +11,6 @@ from matplotlib import pyplot as plt
 import gensim.downloader as api
 model = api.load("word2vec-google-news-300")
 from scipy.spatial.distance import pdist
-
-def get_wordfreq(epochs):
-    '''get word frequency'''
-    wfreq = lambda x: zipf_frequency(x, "en")
-    epochs.metadata['word_freq'] = epochs.metadata['word'].apply(wfreq)
-    return epochs
-
-def get_contents(epochs):
-    '''get epochs with content words'''
-    new_epochs = epochs[epochs.metadata['word_category']=='Content']
-    return new_epochs
 
 
 def get_consecutive_contents(epochs, batch_size):
@@ -54,9 +43,16 @@ def get_consecutive_contents(epochs, batch_size):
     return epochs_n, metadata_nminus, metadata_nplus
 
 
-def get_word2vec(epochs):
+def get_wordfreq(metadata):
+    '''get word frequency'''
+    wfreq = lambda x: zipf_frequency(x, "en")
+    metadata['word_freq'] = metadata['word'].apply(wfreq)
+    return metadata
+
+
+def get_word2vec(metadata):
     '''get word2vec representation for each word'''
-    word_list = epochs.metadata['word'].tolist()
+    word_list = metadata['word'].tolist()
     word_vectors = []
     for word in word_list:
         try:
@@ -64,14 +60,12 @@ def get_word2vec(epochs):
             word_vectors.append(vector)
         except KeyError:
             word_vectors.append(np.nan)
-    epochs.metadata['w2v'] = word_vectors
-    epochs = epochs[epochs.metadata['w2v'].notna()]
-    return epochs
+    metadata['w2v'] = word_vectors
+    return metadata
 
 
-def Model_DSM(select_epochs,var=str):
+def Model_DSM(metadata,var=str):
     '''get pairwise similarity for a variable of interest'''
-    metadata = select_epochs.metadata
     if len(metadata[var].values[0].shape) == 0:
         num_letters = metadata[var].values
         diff_matrix = np.abs(np.subtract.outer(num_letters, num_letters))
@@ -87,7 +81,6 @@ def Model_DSM(select_epochs,var=str):
     return dsm
 
 
-
 def generate_meg_dsms(select_epochs):
     '''calculate MEG data RDMs using spatial information: time*trialpair'''
     meg_data = select_epochs.get_data()
@@ -101,26 +94,118 @@ def generate_meg_dsms(select_epochs):
 
 
 
-my_path = my_path = r'/cluster/home/lwang11/MASC-MEG/'
+# correlate model and data RDMs
+def MEG_DSM_onevar(dsm, data_dsm):
+    n_times = data_dsm.shape[1]
+    data_dsm_modified = [data_dsm[i] for i in range(data_dsm.shape[0])]
+    x2 = dsm
+    rsa = mne_rsa.rsa(data_dsm_modified, x2, metric='spearman',
+                            verbose=True, n_data_dsms=n_times, n_jobs=1)
+    
+    return rsa
+
+
+################################################################
+## Run functions: filter epochs
+################################################################
+my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
+#my_path = r'/cluster/home/lwang11/MASC-MEG/'
 subject = str(1).zfill(2)
 session = 0
-epochs_fname = my_path + f"/Segments/session{session}_sub{subject}"
+task = 0
+epochs_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}"
 epochs = mne.read_epochs(epochs_fname)
 epochs.drop_channels(epochs.info['bads']) #drop bad channels
 epochs.apply_baseline() #baseline correction
-epochs_n, metadata_nminus, metadata_nplus = get_consecutive_contents(epochs) #filter epochs: only keep trials with three consecutive content words
-epochs_fname = my_path + f"/Segments/session{session}_sub{subject}-filtered-epochsN.fif"
+
+epochs_n, metadata_nminus, metadata_nplus = get_consecutive_contents(epochs,batch_size=50) #filter epochs: only keep trials with three consecutive content words
+epochs_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsN.fif"
 epochs_n.save(epochs_fname,overwrite=True)
 del epochs_n
-metadata_nminus_fname = my_path + f"/Segments/session{session}_sub{subject}-filtered-epochsNminus.csv"
-pd.to_csv(metadata_nminus_fname)
+metadata_nminus_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsNminus.csv"
+metadata_nminus.to_csv(metadata_nminus_fname, index=False)
 del metadata_nminus
-metadata_nplus_fname = my_path + f"/Segments/session{session}_sub{subject}-filtered-epochsNplus.csv"
-pd.to_csv(metadata_nplus_fname)
+metadata_nplus_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsNplus.csv"
+metadata_nplus.to_csv(metadata_nplus_fname, index=False)
 del metadata_nplus
 
-#epochs = get_wordfreq(epochs) #get word frequency metadata
-#epochs = get_word2vec(epochs) #get word2vec vectors metadata
+################################################################
+# get word features: w2v
+epochs_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsN.fif"
+epochs_n = mne.read_epochs(epochs_fname)
 
-#dsm = Model_DSM(epochs_n,var='w2v')
-#data_dsm = generate_meg_dsms(epochs_n)
+metadata_nminus_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsNminus.csv"
+metadata_nminus = pd.read_csv(metadata_nminus_fname)
+
+metadata_nplus_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsNplus.csv"
+metadata_nplus = pd.read_csv(metadata_nplus_fname)
+
+# get word frequency
+metadata_n = get_wordfreq(epochs_n.metadata)
+metadata_nminus = get_wordfreq(metadata_nminus)
+metadata_nplus = get_wordfreq(metadata_nplus)
+
+# get word2vec embeddings
+metadata_n = get_word2vec(metadata_n)
+metadata_nminus = get_word2vec(metadata_nminus)
+metadata_nplus = get_word2vec(metadata_nplus)
+
+# get model dsms
+w2v_n = Model_DSM(metadata_n,var='w2v')
+w2v_nminus = Model_DSM(metadata_nminus,var='w2v')
+w2v_nplus = Model_DSM(metadata_nplus,var='w2v')
+
+# get data dsm
+data_dsm = generate_meg_dsms(epochs_n)
+
+################################################
+# run RSA
+rsa_n = MEG_DSM_onevar(w2v_n, data_dsm)
+rsa_nplus = MEG_DSM_onevar(w2v_nminus, data_dsm)
+rsa_nminus = MEG_DSM_onevar(w2v_nplus, data_dsm)
+
+rsa_all = {}
+rsa_all['n'] = rsa_n.tolist()
+rsa_all['n-1'] = rsa_nminus.tolist()
+rsa_all['n+1'] = rsa_nplus.tolist()
+
+# Save the dictionary to a file
+rsa_fname = my_path + f"rsa/session{session}_sub{subject}_task{task}"+'_rsa_timecourse'
+with open(rsa_fname, "w") as file:
+    json.dump(rsa_all, file)
+
+
+###############################################################
+# plot RSA results for each subject and each session: word2vec
+subjects = range(1,12)
+for i in subjects:
+    subject = str(i).zfill(2)
+    rsa_subs = []
+    for session in range(1):
+        for task in range(4):
+        rsa_fname = my_path + f"/rsa/session{session}_sub{subject}_task{task}"+'_rsa_timecourse'
+        rsa_n=[]
+        rsa_nplus=[]
+        rsa_nminus=[]
+        with open(rsa_fname, "r") as file:
+            rsa_all = json.load(file)         
+            rsa_n.append(np.array(rsa_all['n']))
+            rsa_nplus.append(np.array(rsa_all['n+1']))
+            rsa_nminus.append(np.array(rsa_all['n-1']))
+        plot_n = mean(np.array(rsa_n),0)
+        plot_nplus = mean(np.array(rsa_nplus),0)
+        plot_nminus = mean(np.array(rsa_nminus),0)
+        plt.figure(figsize=(8, 4))
+        plt.plot(epochs.times, rsa_n)
+        plt.plot(epochs.times, rsa_nplus)
+        plt.plot(epochs.times, rsa_nminus)
+        plt.xlabel('time (s)')
+        plt.ylabel('RSA value')
+        plt.legend(['n','n+1', 'n-1'])
+        plt.savefig(my_path + f"/rsa/figures/session{session}_sub{subject}"+'_rsa_timecourse')
+        plt.close()
+
+
+#########################################################################
+# see other examples: https://github.com/wmvanvliet/mne-rsa/tree/master
+# https://users.aalto.fi/~vanvlm1/mne-rsa/index.html

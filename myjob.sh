@@ -12,13 +12,13 @@
 ##SBATCH --mail-user=your_utln@tufts.edu
 
 #load anaconda module
-module load /cluster/tufts/hpc/tools/anaconda/202111
+module load anaconda/2021.11
 
 #initialize the shell to use conda
 conda init bash
 
 #activate conda environment, if you use locally installed conda env, make sure use the full path to the env
-conda activate /cluster/tufts/kuperberglab/lwang11/condaenv/mne
+source activate /cluster/tufts/kuperberglab/lwang11/condaenv/mne
 
 python 02_filter_epochs.py #make sure the results and data generated from your scripts are saved to files
 
