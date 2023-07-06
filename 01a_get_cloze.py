@@ -13,6 +13,7 @@ import openai
 import math
 import numpy as np
 import itertools
+import os
 
 key_fname = '/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/api_key.txt'
 with open(key_fname,'r') as file:
@@ -86,26 +87,45 @@ def get_word_cloze(df,prompt):
     return df_cloze
 
 
-def find_cloze_cw(df_cloze_all,df_words):
-    '''match the cloze values with the cws identified in the MEG data'''
-    cw_lists = df_words['word'].to_list()
-    for i, word in enumerate(cw_lists):
-        print(i)
-        print(word)
-        while df_cloze_all.loc[i, 'words'] != word:
-            pop_ele = df_cloze_all.loc[i, 'words']
-            print(f'pop out {pop_ele}')
-            df_cloze_all = df_cloze_all.drop(i, axis=0)
-            df_cloze_all.reset_index(drop=True, inplace=True)
-    return df_cloze_all
-        
-##########################################################################
-## combine parts for each story
+    
+##############################################################
+#get words and cloze values in each story
 my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
+stories = os.listdir(my_path + 'stimuli/text/')
 
+for story in stories:
+    fname = my_path + 'stimuli/text/' + story
+    with open(fname,'r') as file:
+        all_content = file.read().split()
+    #words = [re.sub(r'[^\w\s]', '', word) for word in all_content if word.isalpha()]
+
+    # get sentences
+    sentences = get_sentences(all_content)
+
+    # get cloze values for each word in each sentence
+    cloze_list = []
+    for prompt in sentences:
+        df = get_completions(prompt) #get cloze values for tokens
+        df_cloze = get_word_cloze(df,prompt) #get cloze values for words
+        cloze_list.append(df_cloze)
+
+    df_cloze_all = pd.concat(cloze_list, ignore_index=True)
+    df_fname = my_path + 'stimuli/cloze/' + story.split('.')[0] + '_cloze.csv'
+    df_cloze_all.to_csv(df_fname, index=False)
+
+## Match words between the text data and the MEG metadata
+#note: some words are missing in df_words compared to words
+# see '01_generate_words_features.py'
+
+
+
+############################################################################################
+# combine parts for each story: DO NOT USE
+# the subpart stories do not match with the full story text, OR the word list in MEG data
+my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
 all_content = []
 for itask in range(4):
-    fname = my_path + 'stimuli/text_with_wordlists/lw1_produced_' + str(itask) + '.txt'
+    fname = my_path + 'stimuli/text/lw1_produced_' + str(itask) + '.txt'
     with open(fname,'r') as file:
         content = file.read().split()
         #words = [re.sub(r'[^\w\s]', '', word) for word in content if word.isalpha()]
@@ -150,36 +170,18 @@ fname = my_path + 'stimuli/text_with_wordlists/story_cable_spool_fort.json'
 with open(fname,'w') as file:
     json.dump(all_content,file)
     
+    
 ##############################################################
 #get words in each story
-my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
+my_path = r'C:\\Users\\lwang11\\Dropbox (Partners HealthCare)\\OngoingProjects\\MASC-MEG\\'
+
 stories = ['story_lw1', 'story_the_black_willow', 'story_easy_money', 'story_cable_spool_fort']
-fname = my_path + 'stimuli/text_with_wordlists/' + stories[0] + '.json'  
+i=1
+fname = my_path + 'stimuli/text_with_wordlists/' + stories[i] + '.json'  
 with open(fname,'r') as file:
     all_content = json.load(file)
+    print(len(all_content))
 #words = [re.sub(r'[^\w\s]', '', word) for word in all_content if word.isalpha()]
 
 # get sentences
 sentences = get_sentences(all_content)
-
-# get cloze values for each word
-prompt=sentences[1]
-df = get_completions(prompt)
-df_cloze_s2 = get_word_cloze(df,prompt)
-
-prompt = sentences[0] + ' ' + sentences[1]
-df = get_completions(prompt)
-df_cloze_two = get_word_cloze(df,prompt)
-
-
-#note: some words are missing in df_words compared to words
-
-
-## meta data of words in subject 1
-subject = str(1).zfill(2)
-session = 0
-task = 0
-word_fname = my_path + f"/segments/words_sub{subject}_session{session}_task{task}.csv"
-df_words = pd.read_csv(word_fname)
-df_cloze_cw = find_cloze_cw(df_cloze_two,df_words[:df_cloze_s2.shape[0]])
-
