@@ -14,7 +14,8 @@ import math
 import numpy as np
 import itertools
 
-key_fname = r'C:\Users\lwang11\Dropbox (Partners HealthCare)\OngoingProjects\MASC-MEG\api_key.txt'
+key_fname = r'C:\Users\lwang11\Dropbox (Partners HealthCare)\OngoingProjects\MASC-MEG\lab_api_key.txt'
+#key_fname = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/lab_api_key.txt'
 with open(key_fname,'r') as file:
     key = file.read()
 openai.api_key = key #get it from your openai account
@@ -40,7 +41,7 @@ def get_completions(prompt):
     '''get the cloze values for every token in the input
     prompt: text input'''
     completions = openai.Completion.create(
-        engine="text-davinci-003",
+        engine= "gpt-3.5-turbo",#"text-davinci-003",
         prompt=prompt,
         max_tokens=0,
         top_p=1,
@@ -151,10 +152,13 @@ with open(fname,'w') as file:
     json.dump(all_content,file)
     
 ##############################################################
-#get words in each story
+#get cloze value of words in each story
 my_path = r'C:\\Users\\lwang11\\Dropbox (Partners HealthCare)\\OngoingProjects\\MASC-MEG\\'
-
 stories = ['story_lw1', 'story_the_black_willow', 'story_easy_money', 'story_cable_spool_fort']
+
+# -----------------------------------------------------------------
+## Sentence context
+# -----------------------------------------------------------------
 i=1
 fname = my_path + 'stimuli/text_with_wordlists/' + stories[i] + '.json'  
 with open(fname,'r') as file:
@@ -165,7 +169,7 @@ with open(fname,'r') as file:
 # get sentences
 sentences = get_sentences(all_content)
 
-# get cloze values for each word
+# get cloze values for each word in a particular sentence
 prompt=sentences[0]
 df = get_completions(prompt)
 df_cloze_s2 = get_word_cloze(df,prompt)
@@ -173,3 +177,12 @@ df_cloze_s2 = get_word_cloze(df,prompt)
 prompt = sentences[0] + ' ' + sentences[1]
 df = get_completions(prompt)
 df_cloze_two = get_word_cloze(df,prompt)
+
+# -----------------------------------------------------------------
+## Full context
+# -----------------------------------------------------------------
+i=1
+fname = my_path + 'stimuli/text_with_wordlists/' + stories[i] + '.json'  
+with open(fname,'r') as file:
+    all_content = json.load(file)
+    print(len(all_content))

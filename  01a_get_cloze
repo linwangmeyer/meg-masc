@@ -15,7 +15,7 @@ import numpy as np
 import itertools
 import os
 
-key_fname = '/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/api_key.txt'
+key_fname = '/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/lab_api_key.txt'
 with open(key_fname,'r') as file:
     key = file.read()
 openai.api_key = key #get it from your openai account
@@ -89,7 +89,8 @@ def get_word_cloze(df,prompt):
 
     
 ##############################################################
-#get words and cloze values in each story
+#get words and cloze values in each story: NO NOT USE THIS ONE
+# the full story text does not matche with the word list in MEG data
 my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
 stories = os.listdir(my_path + 'stimuli/text/')
 
@@ -120,8 +121,8 @@ for story in stories:
 
 
 ############################################################################################
-# combine parts for each story: DO NOT USE
-# the subpart stories do not match with the full story text, OR the word list in MEG data
+# combine parts for each story: USE THIS ONE
+# the subpart stories do not match with the full story text, BUT it matches with the word list in MEG data
 my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
 all_content = []
 for itask in range(4):
