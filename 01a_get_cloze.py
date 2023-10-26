@@ -1,6 +1,5 @@
 '''Get cloze values'''
 import json
-import mne
 import pandas as pd
 import numpy as np
 import nltk
@@ -11,11 +10,11 @@ from matplotlib import pyplot as plt
 import re
 import openai
 import math
-import numpy as np
 import itertools
 import os
+from difflib import ndiff
 
-key_fname = '/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/api_key.txt'
+key_fname = '/Users/lwang11/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/lab_api_key.txt'
 with open(key_fname,'r') as file:
     key = file.read()
 openai.api_key = key #get it from your openai account
@@ -41,7 +40,7 @@ def get_completions(prompt):
     '''get the cloze values for every token in the input
     prompt: text input'''
     completions = openai.Completion.create(
-        engine="text-davinci-003",
+        model="text-davinci-003",
         prompt=prompt,
         max_tokens=0,
         top_p=1,
@@ -87,10 +86,63 @@ def get_word_cloze(df,prompt):
     return df_cloze
 
 
+def get_cloze_longcontext(all_content):
+    '''In case the context is over 4099 tokens'''
+    sentences = get_sentences(all_content.split())
+    content_a = ' '.join(sentences[:150])
+    content_b = ' '.join(sentences[100:])
     
-##############################################################
-#get words and cloze values in each story
-my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
+    df = get_completions(content_a) #get cloze values for tokens
+    df_cloze_a = get_word_cloze(df,content_a) #get cloze values for words
+    
+    df = get_completions(content_b) #get cloze values for tokens
+    df_cloze_b = get_word_cloze(df,content_b) #get cloze values for words
+    
+    # Identify the overlapping parts
+    n = 30
+    list_a = df_cloze_a['words'].tolist()
+    list_b = df_cloze_b['words'].tolist()
+    found_match = False
+    for i in range(len(list_a) - n + 1):
+        if list_a[i:i+n] == list_b[:n]:
+            found_match = True
+            break
+    
+    overlap_a = list_a[i:len(list_a)]
+    overlap_b = list_b[:len(overlap_a)]
+    if overlap_a == overlap_b:
+        df_b_cut = df_cloze_b[len(overlap_a):]
+        df_cloze_all = pd.concat([df_cloze_a,df_b_cut],axis=0)
+    
+    return df_cloze_all
+
+##########################################################################
+#get words and cloze values in each story: the full precedding context
+#my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
+my_path = r'S:/USERS/Lin/MASC-MEG/'
+stories = os.listdir(my_path + 'stimuli/text/')
+
+for story in stories:
+    fname = my_path + 'stimuli/text/' + story
+    with open(fname,'r') as file:
+        all_content = file.read()
+
+    if len(all_content.split()) < 4000:
+        df = get_completions(all_content) #get cloze values for tokens
+        df_cloze_all = get_word_cloze(df,all_content) #get cloze values for words
+    else:
+        df_cloze_all = get_cloze_longcontext(all_content)
+    
+    df_fname = my_path + 'stimuli/cloze/cloze_FullContext_' + story.split('.')[0] + '.csv'
+    df_cloze_all.to_csv(df_fname, index=False)
+
+#df_cloze_all[df_cloze_all['probs'] > 0.9]['words'].tolist()
+
+    
+##########################################################################
+#get words and cloze values in each story: each sentence as a context
+#my_path = r'/Users/lwang11/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
+my_path = r'S:/USERS/Lin/MASC-MEG/'
 stories = os.listdir(my_path + 'stimuli/text/')
 
 for story in stories:
@@ -110,7 +162,7 @@ for story in stories:
         cloze_list.append(df_cloze)
 
     df_cloze_all = pd.concat(cloze_list, ignore_index=True)
-    df_fname = my_path + 'stimuli/cloze/' + story.split('.')[0] + '_cloze.csv'
+    df_fname = my_path + 'stimuli/cloze/cloze_SenContext_' + story.split('.')[0] + '.csv'
     df_cloze_all.to_csv(df_fname, index=False)
 
 ## Match words between the text data and the MEG metadata
@@ -118,22 +170,55 @@ for story in stories:
 # see '01_generate_words_features.py'
 
 
-
+'''
 ############################################################################################
-# combine parts for each story: DO NOT USE
+# combine parts for each story: which contains both the story text and random word/sentence lists
 # the subpart stories do not match with the full story text, OR the word list in MEG data
-my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
+#my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
+my_path = r'S:/USERS/Lin/MASC-MEG/'
+
+#----------------------
+# story 1
+# texts together with random word/sentence lists in the middle
 all_content = []
 for itask in range(4):
-    fname = my_path + 'stimuli/text/lw1_produced_' + str(itask) + '.txt'
+    fname = my_path + 'stimuli/text_with_wordlists/lw1_produced_' + str(itask) + '.txt'
     with open(fname,'r') as file:
         content = file.read().split()
         #words = [re.sub(r'[^\w\s]', '', word) for word in content if word.isalpha()]
         all_content.extend(content)
-fname = my_path + 'stimuli/text_with_wordlists/story_lw1.json'  
-with open(fname,'w') as file:
-    json.dump(all_content,file)
-    
+
+# only continuous texts
+fname = my_path + 'stimuli/text/' + 'lw1.txt'
+with open(fname,'r') as file:
+    all_text = file.read().split()
+            
+# Find the differences between tokens
+diff = list(ndiff(all_text, all_content))
+extra_tokens_with_context = []
+missing_tokens_with_context = []
+context_window = 5  # Number of words around the extra token
+for i, token in enumerate(diff):
+    if token.startswith('+ '):
+        extra_token = token[2:]
+        context_start = max(0, i - context_window)
+        context_end = min(len(diff), i + context_window + 1)
+        context = ' '.join([diff[j][2:] for j in range(context_start, context_end) if diff[j].startswith(('  ', '+ '))])
+        extra_tokens_with_context.append((extra_token, context))
+    if token.startswith('- '):
+        extra_token = token[2:]
+        context_start = max(0, i - context_window)
+        context_end = min(len(diff), i + context_window + 1)
+        context = ' '.join([diff[j][2:] for j in range(context_start, context_end) if diff[j].startswith(('  ', '+ '))])
+        missing_tokens_with_context.append((extra_token, context))
+
+
+print("Extra tokens in full_content with context:")
+for extra_token, context in extra_tokens_with_context:
+    print(f"Extra Token: {extra_token}")
+    print(f"Context: {context}\n")
+
+
 
 all_content = []
 for itask in range(12):
@@ -185,3 +270,4 @@ with open(fname,'r') as file:
 
 # get sentences
 sentences = get_sentences(all_content)
+'''
