@@ -130,10 +130,11 @@ for i in subjects:
                 raw_clean_fname = my_path + f"/Raws_clean/sub{subject}_session{session}_task{task}.fif"
                 raw_clean.save(raw_clean_fname,overwrite=True)
                 
-                epochs,_ = _get_epochs(raw_clean)                
+                epochs,df_words = _get_epochs(raw_clean)                
                 epochs_fname = my_path + f"/segments_cw/session{session}_sub{subject}"
                 epochs.save(epochs_fname,overwrite=True)
-                
+                word_fname = my_path + f"/segments/words_session{session}_sub{subject}.csv"
+                df_words.to_csv(word_fname,index=False)
                 print(f'------session{session} of subject{subject} is done!')
                 
             except FileNotFoundError as e:
@@ -160,7 +161,6 @@ for file_name in file_names:
 ##--------------------------------------------------------------------------------------
 # to make up previous mistake in defining epochs (including random words)
 ##--------------------------------------------------------------------------------------
-
 def _get_experimental_items(raw):
     # Only include items that are in the sentence conditions (i.e. remove random word lists)
     meta = list()
