@@ -113,7 +113,6 @@ def _get_epochs(raw):
 
 
 
-
 #################################################
 ## Get epochs for each session and each task
 my_path = r'S:/USERS/Lin/MASC-MEG/'
@@ -142,7 +141,7 @@ for i in subjects:
                 continue
 
 ##--------------------------------------------------------------------------------------
-# re-run epochs
+# re-run epochs: following the '_clean_raw' function
 my_path = r'S:/USERS/Lin/MASC-MEG/'
 file_names = os.listdir(my_path + 'Raws_clean/')
 for file_name in file_names:

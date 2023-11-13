@@ -1,4 +1,4 @@
-# RSA to words n, n+1 and n-1
+# get all features for each word
 import json
 import mne
 import pandas as pd
@@ -107,6 +107,7 @@ def get_syntax(words_only):
     words_fun = ['Content' if any(tag[1] in content_word_categories for tag in word_tags) else 'Functional' for word, word_tags in zip(words_only, words_tag)]
     return words_fun
 
+
 ################################################################
 # get word features for words
 ################################################################
@@ -161,53 +162,3 @@ for file in file_lists:
     
     epochs.save(epochs_fname,overwrite=True)
 
-
-################################################################
-# evoked activity to different conditions of features
-################################################################
-my_path = r'S:/USERS/Lin/MASC-MEG/'
-file_lists = [file for file in os.listdir(my_path+'segments/') if file.endswith(".fif")]
-for file in file_lists:
-    read_fname = os.path.join(my_path,'segments',file)
-    print(f'processing file: {file}')   
-        
-    metadata = epochs.metadata
-    epochs_low = epochs[(metadata['probs'] < 0.4) & (metadata['probs'] > 0.1)]
-    epochs_high = epochs[metadata['probs'] >= 0.4]
-
-    evokeds = dict()
-    evokeds_low = epochs_low.average().apply_baseline((-0.2, 0))
-    evokeds_high = epochs_high.average().apply_baseline((-0.2, 0))
-
-    evoked_fname = os.path.join(my_path,'ERFs',file)
-    mne.write_evokeds(evoked_fname,[evokeds_low, evokeds_high],overwrite=True)
-    
-
-# ------------ Grand average ------------------
-file_lists = [file for file in os.listdir(my_path+'ERFs/') if file.endswith(".fif")]
-all_low = []
-all_high = []
-for file in file_lists:
-    read_fname = os.path.join(my_path,'ERFs',file)
-    print(f'processing file: {file}')
-    
-    evokeds_low, evokeds_high = mne.read_evokeds(read_fname)    
-    all_low.append(evokeds_low)
-    all_high.append(evokeds_high)
-    
-    grandavg_low = mne.grand_average(all_low)
-    grandavg_high = mne.grand_average(all_high)
-    
-    evoked_fname = os.path.join(my_path,'ERFs','grandavg')
-    mne.write_evokeds(evoked_fname,[grandavg_low, grandavg_high],overwrite=True)
-
-
-mne.viz.plot_compare_evokeds([grandavg_low, grandavg_high], picks=['MEG 054'])
-mne.viz.plot_compare_evokeds([grandavg_low, grandavg_high], picks=['MEG 065'])
-
-evoked_diff = mne.combine_evoked([grandavg_low, grandavg_high], weights=[1, -1])
-evoked_diff.plot_topomap(times=[0.0, 0.10, 0.40, 0.60], ch_type="mag")
-
-# check sensor layout
-layout = mne.channels.find_layout(epochs.info, ch_type='meg')
-layout.plot()
