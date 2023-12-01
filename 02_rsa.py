@@ -4,6 +4,7 @@ import mne
 import pandas as pd
 import numpy as np
 import nltk
+import os
 from wordfreq import zipf_frequency
 import mne_rsa
 from tqdm import tqdm
@@ -46,13 +47,13 @@ def get_consecutive_contents(epochs, batch_size):
 def get_wordfreq(metadata):
     '''get word frequency'''
     wfreq = lambda x: zipf_frequency(x, "en")
-    metadata['word_freq'] = metadata['word'].apply(wfreq)
+    metadata['word_freq'] = metadata['words'].apply(wfreq)
     return metadata
 
 
 def get_word2vec(metadata):
     '''get word2vec representation for each word'''
-    word_list = metadata['word'].tolist()
+    word_list = metadata['words'].tolist()
     word_vectors = []
     for word in word_list:
         try:
@@ -67,9 +68,9 @@ def get_word2vec(metadata):
 def Model_DSM(metadata,var=str):
     '''get pairwise similarity for a variable of interest'''
     if len(metadata[var].values[0].shape) == 0:
-        num_letters = metadata[var].values
-        diff_matrix = np.abs(np.subtract.outer(num_letters, num_letters))
-        indices = np.triu_indices(len(num_letters), k=1)
+        lex_values = metadata[var].values
+        diff_matrix = np.abs(np.subtract.outer(lex_values, lex_values))
+        indices = np.triu_indices(len(lex_values), k=1)
         higher_diagonal = diff_matrix[indices]
         dsm = higher_diagonal.flatten()
     elif len(metadata[var].values[0].shape) == 1:    
@@ -93,86 +94,145 @@ def generate_meg_dsms(select_epochs):
     return data_dsm
 
 
+def calculate_all_rdms_cw(epochs, condition_range):
+    '''calculate the RDMs for both MEG data and lexico-semantic variables for cw
+    epochs: mne-segmented epochs
+    condition_range: list of tuples to define the cloze ranges,
+    e.g. [(0.05, 0.20, 'low'), (0.20, 0.60, 'mid'), (0.60, 1.0, 'high')]
+    return: dictionary containing all RDMs'''
+    all_rdms = {}
+    metadata = epochs.metadata
+    for condition in condition_range:
+        x=(metadata['probs'] > condition[0]) & (metadata['probs'] <= condition[1])
+        sel_epochs = epochs[1:][x[1:]]#remove the first epoch (because there is no preceding trial for the first epoch)
+        meg_rdm = generate_meg_dsms(sel_epochs)
+        model_metadata = get_word2vec(sel_epochs.metadata)
+        w2v_model_rdm = Model_DSM(model_metadata, var='w2v')
+        freq_model_rdm = Model_DSM(model_metadata, var='frequency')
+        probs_model_rdm = Model_DSM(model_metadata, var='probs')
+        duration_model_rdm = Model_DSM(model_metadata, var='duration')
+
+        all_rdms[f'meg_{condition[2]}'] = meg_rdm
+        all_rdms[f'w2v_{condition[2]}'] = w2v_model_rdm
+        all_rdms[f'freq_{condition[2]}'] = freq_model_rdm
+        all_rdms[f'probs_{condition[2]}'] = probs_model_rdm
+        all_rdms[f'duration_{condition[2]}'] = duration_model_rdm
+    return all_rdms
+
+def calculate_all_rdms_precw(epochs, condition_range):
+    '''calculate the RDMs for both MEG data and lexico-semantic variables for words preceding cw (precw)
+    epochs: mne-segmented epochs
+    condition_range: list of tuples to define the cloze ranges,
+    e.g. [(0.05, 0.20, 'low'), (0.20, 0.60, 'mid'), (0.60, 1.0, 'high')]
+    return: dictionary containing all RDMs'''
+    all_rdms = {}
+    metadata = epochs.metadata
+    for condition in condition_range:
+        x=(metadata['probs'] > condition[0]) & (metadata['probs'] <= condition[1])
+        x_shift=x.copy().shift(-1) #selecting the immediate preceding epoch
+        epochs_shift = epochs[x_shift.fillna(False)]#remove the last epoch by setting it to False
+        meg_rdm = generate_meg_dsms(epochs_shift)
+        model_metadata = get_word2vec(epochs_shift.metadata)
+        w2v_model_rdm = Model_DSM(model_metadata, var='w2v')
+        freq_model_rdm = Model_DSM(model_metadata, var='frequency')
+        probs_model_rdm = Model_DSM(model_metadata, var='probs')
+        duration_model_rdm = Model_DSM(model_metadata, var='duration')
+
+        all_rdms[f'meg_{condition[2]}'] = meg_rdm
+        all_rdms[f'w2v_{condition[2]}'] = w2v_model_rdm
+        all_rdms[f'freq_{condition[2]}'] = freq_model_rdm
+        all_rdms[f'probs_{condition[2]}'] = probs_model_rdm
+        all_rdms[f'duration_{condition[2]}'] = duration_model_rdm
+    return all_rdms
+
+
 
 # correlate model and data RDMs
-def MEG_DSM_onevar(dsm, data_dsm):
-    n_times = data_dsm.shape[1]
+def MEG_DSM_onevar(model_dsm, data_dsm):
+    '''model_dsm: array of trialpair
+    data_dsm: array of time*trialpair'''
+    n_times = data_dsm.shape[0]
     data_dsm_modified = [data_dsm[i] for i in range(data_dsm.shape[0])]
-    x2 = dsm
-    rsa = mne_rsa.rsa(data_dsm_modified, x2, metric='spearman',
+    rsa = mne_rsa.rsa(data_dsm_modified, model_dsm, metric='spearman',
                             verbose=True, n_data_dsms=n_times, n_jobs=1)
-    
     return rsa
 
 
-################################################################
-## Run functions: filter epochs
-################################################################
-my_path = r'/Users/linwang/Dropbox (Partners HealthCare)/OngoingProjects/MASC-MEG/'
-#my_path = r'/cluster/home/lwang11/MASC-MEG/'
-subject = str(1).zfill(2)
-session = 0
-task = 0
-epochs_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}"
-epochs = mne.read_epochs(epochs_fname)
-epochs.drop_channels(epochs.info['bads']) #drop bad channels
-epochs.apply_baseline() #baseline correction
-
-epochs_n, metadata_nminus, metadata_nplus = get_consecutive_contents(epochs,batch_size=50) #filter epochs: only keep trials with three consecutive content words
-epochs_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsN.fif"
-epochs_n.save(epochs_fname,overwrite=True)
-del epochs_n
-metadata_nminus_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsNminus.csv"
-metadata_nminus.to_csv(metadata_nminus_fname, index=False)
-del metadata_nminus
-metadata_nplus_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsNplus.csv"
-metadata_nplus.to_csv(metadata_nplus_fname, index=False)
-del metadata_nplus
-
-################################################################
-# get word features: w2v
-epochs_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsN.fif"
-epochs_n = mne.read_epochs(epochs_fname)
-
-metadata_nminus_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsNminus.csv"
-metadata_nminus = pd.read_csv(metadata_nminus_fname)
-
-metadata_nplus_fname = my_path + f"/segments/session{session}_sub{subject}_task{task}-filtered-epochsNplus.csv"
-metadata_nplus = pd.read_csv(metadata_nplus_fname)
-
-# get word frequency
-metadata_n = get_wordfreq(epochs_n.metadata)
-metadata_nminus = get_wordfreq(metadata_nminus)
-metadata_nplus = get_wordfreq(metadata_nplus)
-
-# get word2vec embeddings
-metadata_n = get_word2vec(metadata_n)
-metadata_nminus = get_word2vec(metadata_nminus)
-metadata_nplus = get_word2vec(metadata_nplus)
-
-# get model dsms
-w2v_n = Model_DSM(metadata_n,var='w2v')
-w2v_nminus = Model_DSM(metadata_nminus,var='w2v')
-w2v_nplus = Model_DSM(metadata_nplus,var='w2v')
-
-# get data dsm
-data_dsm = generate_meg_dsms(epochs_n)
-
-################################################
+# ----------------------------------------------------------------
 # run RSA
-rsa_n = MEG_DSM_onevar(w2v_n, data_dsm)
-rsa_nplus = MEG_DSM_onevar(w2v_nminus, data_dsm)
-rsa_nminus = MEG_DSM_onevar(w2v_nplus, data_dsm)
+# ----------------------------------------------------------------
+my_path = r'S:/USERS/Lin/MASC-MEG/'
+file_lists = [file for file in os.listdir(my_path+'segments/') if file.endswith(".fif")]
+rsa_grand=[]
+for file in file_lists:
+    
+    print(f'processing file: {file}')   
+        
+    # get clean epochs of experimental conditions
+    epochs_fname = my_path + f"/segments/{file}"
+    epochs = mne.read_epochs(epochs_fname)
+    epochs.apply_baseline((-0.2, 0))
+    epochs = epochs[5:] #remove the first 5 trials
 
-rsa_all = {}
-rsa_all['n'] = rsa_n.tolist()
-rsa_all['n-1'] = rsa_nminus.tolist()
-rsa_all['n+1'] = rsa_nplus.tolist()
+    all_words = epochs.metadata['words']
+    missing_words = set([word for word in all_words if word not in model.key_to_index])
+    if len(missing_words)>0:
+        raise ValueError (f'words missing in word2vec in {file}')
+    
+    # Define conditions
+    condition_ranges = [(0.05, 0.20, 'low'), (0.20, 0.60, 'mid'), (0.60, 1.0, 'high')]
+    all_rdms_precw = calculate_all_rdms_precw(epochs, condition_ranges)
+    all_rdms_cw = calculate_all_rdms_cw(epochs, condition_ranges)
 
-# Save the dictionary to a file
-rsa_fname = my_path + f"rsa/session{session}_sub{subject}_task{task}"+'_rsa_timecourse'
-with open(rsa_fname, "w") as file:
-    json.dump(rsa_all, file)
+    # RSA
+    cloze_list = ['low','mid','high']
+    rsa_all = {}
+    for cloze_cond in cloze_list:
+        meg_precw = all_rdms_precw['meg_'+cloze_cond]
+        meg_cw = all_rdms_cw['meg_'+cloze_cond]
+        
+        w2v_precw = all_rdms_precw['w2v_'+cloze_cond]
+        w2v_cw = all_rdms_cw['w2v_'+cloze_cond]
+        
+        rsa_all[cloze_cond+'Cloze' + '_preMEG' + '_preW2V'] = MEG_DSM_onevar(w2v_precw,meg_precw)
+        rsa_all[cloze_cond+'Cloze' + '_preMEG' + '_cwW2V'] = MEG_DSM_onevar(w2v_cw,meg_precw)
+        rsa_all[cloze_cond+'Cloze' + '_cwMEG' + '_preW2V'] = MEG_DSM_onevar(w2v_precw,meg_cw)
+        rsa_all[cloze_cond+'Cloze' + '_cwMEG' + '_cwW2V'] = MEG_DSM_onevar(w2v_cw,meg_cw)
+    
+    rsa_grand.append(rsa_all)
+
+# get all data together
+df = pd.DataFrame(rsa_grand[:])
+df['ID'] = [file[:-4] for file in file_lists]
+fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec.json'
+df.to_json(fname)
+
+# ----------------------------------------------------------------
+# Plot results
+# ----------------------------------------------------------------
+fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec.json'
+df=pd.read_json(fname)
+timewind = np.linspace(-0.2,1.0,121)
+plt.plot(timewind,np.mean(np.vstack(df['lowCloze_preMEG_preW2V'].to_numpy()),0),'r',label='lowCloze_preMEG_preW2V')
+plt.plot(timewind,np.mean(np.vstack(df['midCloze_preMEG_preW2V'].to_numpy()),0),'g',label='midCloze_preMEG_preW2V')
+plt.plot(timewind,np.mean(np.vstack(df['highCloze_preMEG_preW2V'].to_numpy()),0),'b',label='highCloze_preMEG_preW2V')
+plt.legend()
+plt.show()
+
+plt.plot(timewind,np.mean(np.vstack(df['lowCloze_preMEG_cwW2V'].to_numpy()),0),'r')
+plt.plot(timewind,np.mean(np.vstack(df['midCloze_preMEG_cwW2V'].to_numpy()),0),'g')
+plt.plot(timewind,np.mean(np.vstack(df['highCloze_preMEG_cwW2V'].to_numpy()),0),'b')
+plt.show()
+
+plt.plot(timewind,np.mean(np.vstack(df['lowCloze_cwMEG_cwW2V'].to_numpy()),0),'r')
+plt.plot(timewind,np.mean(np.vstack(df['midCloze_cwMEG_cwW2V'].to_numpy()),0),'g')
+plt.plot(timewind,np.mean(np.vstack(df['highCloze_cwMEG_cwW2V'].to_numpy()),0),'b')
+plt.show()
+
+plt.plot(timewind,np.mean(np.vstack(df['lowCloze_cwMEG_preW2V'].to_numpy()),0),'r')
+plt.plot(timewind,np.mean(np.vstack(df['midCloze_cwMEG_preW2V'].to_numpy()),0),'g')
+plt.plot(timewind,np.mean(np.vstack(df['highCloze_cwMEG_preW2V'].to_numpy()),0),'b')
+plt.show()
 
 
 ###############################################################
