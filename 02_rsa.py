@@ -12,7 +12,7 @@ from matplotlib import pyplot as plt
 import gensim.downloader as api
 model = api.load("word2vec-google-news-300")
 from scipy.spatial.distance import pdist
-
+from scipy import stats
 
 def get_consecutive_contents(epochs, batch_size):
     '''get epochs with three content words in a row'''
@@ -67,13 +67,13 @@ def get_word2vec(metadata):
 
 def Model_DSM(metadata,var=str):
     '''get pairwise similarity for a variable of interest'''
-    if len(metadata[var].values[0].shape) == 0:
+    if len(metadata[var].values[0].shape) == 0: #for lexical vars
         lex_values = metadata[var].values
         diff_matrix = np.abs(np.subtract.outer(lex_values, lex_values))
         indices = np.triu_indices(len(lex_values), k=1)
         higher_diagonal = diff_matrix[indices]
         dsm = higher_diagonal.flatten()
-    elif len(metadata[var].values[0].shape) == 1:    
+    elif len(metadata[var].values[0].shape) == 1: #for vectors
         word2vec_array = metadata[var].values
         word2vec_matrix = np.vstack(word2vec_array)
         dsm = pdist(word2vec_matrix, metric='cosine')
@@ -180,12 +180,12 @@ for file in file_lists:
         raise ValueError (f'words missing in word2vec in {file}')
     
     # Define conditions
-    condition_ranges = [(0.05, 0.20, 'low'), (0.20, 0.60, 'mid'), (0.60, 1.0, 'high')]
+    condition_ranges = [(0, 1.0, 'all'), (0.05, 0.20, 'low'), (0.20, 0.60, 'mid'), (0.60, 1.0, 'high')]
     all_rdms_precw = calculate_all_rdms_precw(epochs, condition_ranges)
     all_rdms_cw = calculate_all_rdms_cw(epochs, condition_ranges)
 
     # RSA
-    cloze_list = ['low','mid','high']
+    cloze_list = ['all','low','mid','high']
     rsa_all = {}
     for cloze_cond in cloze_list:
         meg_precw = all_rdms_precw['meg_'+cloze_cond]
@@ -206,6 +206,135 @@ df = pd.DataFrame(rsa_grand[:])
 df['ID'] = [file[:-4] for file in file_lists]
 fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec.json'
 df.to_json(fname)
+
+
+# ----------------------------------------------------------------
+# run RSA: permuted epochs
+# ----------------------------------------------------------------
+my_path = r'S:/USERS/Lin/MASC-MEG/'
+file_lists = [file for file in os.listdir(my_path+'segments/') if file.endswith(".fif")]
+
+# get unique subject IDs
+subIDs = list(set([file[:5] for file in file_lists]))
+rsa_grand=[]
+for sub in subIDs:
+    sub_files = [file for file in file_lists if file.startswith(sub)]
+    
+    rsa_sub = []
+    for sub_file in sub_files:
+    
+        print(f'processing file: {sub_file}')   
+            
+        # get clean epochs of experimental conditions
+        epochs_fname = my_path + f"/segments/{file}"
+        epochs = mne.read_epochs(epochs_fname)
+        epochs.apply_baseline((-0.2, 0))
+        epochs = epochs[5:] #remove the first 5 trials
+        sel_epochs = epochs[1:]#remove the first epoch (because there is no preceding trial for the first epoch)
+        
+        # get the RDM for MEG data
+        meg_rdm = generate_meg_dsms(sel_epochs)
+        
+        # get the word2vec embeddings of unshuffled data
+        model_metadata = get_word2vec(sel_epochs.metadata)
+        
+        # Shuffle the metadata DataFrame, and the word2vec similarity for the shuffled data
+        shuffled_metadata = model_metadata.sample(frac=1).reset_index(drop=True)
+        w2v_model_rdm = Model_DSM(shuffled_metadata, var='w2v')
+        perm_rsa = MEG_DSM_onevar(w2v_model_rdm,meg_rdm)
+        rsa_sub.append(perm_rsa)
+    #average across sessions and tasks
+    rsa_sub_mean = np.mean(np.vstack(rsa_sub),0)
+    rsa_grand.append(rsa_sub_mean)
+
+df = pd.DataFrame(rsa_grand[:])
+df['ID'] = subIDs
+fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec_shuffled.json'
+df.to_json(fname)
+
+
+# ----------------------------------------------------------------
+# Average results for each subject
+# ----------------------------------------------------------------
+subIDs = set(df['ID'].str.split('_').str[0])
+cond_rsa = {}
+allconds = ['allCloze_preMEG_preW2V','allCloze_preMEG_cwW2V','allCloze_cwMEG_preW2V','allCloze_cwMEG_cwW2V']
+for cond in allconds:
+    all_rsa = []
+    for sub in subIDs:    
+        df2 = df[df['ID'].str.startswith(sub)]
+        rsa = np.array(df2[cond].tolist()).mean(axis=0)
+        all_rsa.append(rsa)
+    cond_rsa[cond] = np.vstack(all_rsa[:])
+
+timewind = np.linspace(-0.2,1.0,121)
+plt.plot(timewind,np.mean(cond_rsa['allCloze_preMEG_preW2V'],0),'m',label='allCloze_preMEG_preW2V')
+plt.plot(timewind,np.mean(cond_rsa['allCloze_preMEG_cwW2V'],0),'b',label='allCloze_preMEG_cwW2V')
+plt.plot(timewind,np.mean(cond_rsa['allCloze_cwMEG_cwW2V'],0),'k',label='allCloze_cwMEG_cwW2V')
+plt.plot(timewind,np.mean(cond_rsa['allCloze_cwMEG_preW2V'],0),'r',label='allCloze_cwMEG_preW2V')
+plt.show()
+
+
+# ----------------------------------------------------------------
+# Statistical test at each time point
+# ----------------------------------------------------------------
+allconds = ['allCloze_preMEG_preW2V','allCloze_preMEG_cwW2V','allCloze_cwMEG_preW2V','allCloze_cwMEG_cwW2V']
+null_hypothesis_mean = 0
+tval = {}
+pval = {}
+for cond in allconds:
+    data = cond_rsa[cond]
+    t_statistic, p_value = stats.ttest_1samp(data, null_hypothesis_mean)
+    tval[cond]=t_statistic
+    pval[cond]=p_value
+
+
+data = cond_rsa['allCloze_cwMEG_preW2V']
+null_hypothesis_mean = 0
+t_statistic, p_value = stats.ttest_1samp(data, null_hypothesis_mean)
+
+# ----------------------------------------------------------------
+# Statistical test: MNE-python function
+# ----------------------------------------------------------------
+from mne.stats import spatio_temporal_cluster_1samp_test
+
+data = cond_rsa['allCloze_cwMEG_preW2V']
+fdata = np.reshape(data,(data.shape[0],data.shape[1],1))
+
+# Run the cluster-based permutation test
+T_obs, clusters, cluster_p_values, H0 = spatio_temporal_cluster_1samp_test(fdata, n_permutations=1000)
+significant_clusters = [cluster for i, cluster in enumerate(clusters) if cluster_p_values[i] <= 0.05]
+for i, cluster in enumerate(significant_clusters):
+    print(f"Cluster {i+1}:")
+    print(f"Cluster p-value: {cluster_p_values[i]}")
+
+
+#------------------------------
+# plot the three RSA effects
+#------------------------------
+def plot_R(cond_rsa, condition, color,condlabel):        
+    meanR = np.mean(cond_rsa[condition], 0)
+    sd = np.std(cond_rsa[condition], 0) / np.sqrt(cond_rsa[condition].shape[0])
+    timewind = np.linspace(-0.2, 1.0, meanR.shape[0]) * 1000
+    plt.plot(timewind, meanR, color=color, label=condlabel)
+    plt.fill_between(timewind,
+                    meanR - sd,
+                    meanR + sd,
+                    color=color,
+                    alpha=0.2)
+
+plot_R(cond_rsa,'allCloze_cwMEG_cwW2V','red','current N') #current
+plot_R(cond_rsa,'allCloze_cwMEG_preW2V','green','previous Nminus') #previous
+plot_R(cond_rsa,'allCloze_preMEG_cwW2V','blue','predicted Nplus') #predicted
+
+plt.axhline(y=0, color='black', linestyle='--')
+plt.xlabel('Time (ms)')
+plt.ylabel('R')
+plt.title('RSA')
+plt.legend()
+plt.show()
+
+
 
 # ----------------------------------------------------------------
 # Plot results
@@ -235,6 +364,16 @@ plt.plot(timewind,np.mean(np.vstack(df['highCloze_cwMEG_preW2V'].to_numpy()),0),
 plt.show()
 
 
+fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec.json'
+df=pd.read_json(fname)
+timewind = np.linspace(-0.2,1.0,121)
+plt.plot(timewind,np.mean(np.vstack(df['allCloze_preMEG_preW2V'].to_numpy()),0),'m',label='allCloze_preMEG_preW2V')
+plt.plot(timewind,np.mean(np.vstack(df['allCloze_preMEG_cwW2V'].to_numpy()),0),'b',label='allCloze_preMEG_cwW2V')
+plt.plot(timewind,np.mean(np.vstack(df['allCloze_cwMEG_cwW2V'].to_numpy()),0),'k',label='allCloze_cwMEG_cwW2V')
+plt.plot(timewind,np.mean(np.vstack(df['allCloze_cwMEG_preW2V'].to_numpy()),0),'r',label='allCloze_cwMEG_preW2V')
+plt.show()
+
+
 ###############################################################
 # plot RSA results for each subject and each session: word2vec
 subjects = range(1,12)
@@ -243,27 +382,27 @@ for i in subjects:
     rsa_subs = []
     for session in range(1):
         for task in range(4):
-        rsa_fname = my_path + f"/rsa/session{session}_sub{subject}_task{task}"+'_rsa_timecourse'
-        rsa_n=[]
-        rsa_nplus=[]
-        rsa_nminus=[]
-        with open(rsa_fname, "r") as file:
-            rsa_all = json.load(file)         
-            rsa_n.append(np.array(rsa_all['n']))
-            rsa_nplus.append(np.array(rsa_all['n+1']))
-            rsa_nminus.append(np.array(rsa_all['n-1']))
-        plot_n = mean(np.array(rsa_n),0)
-        plot_nplus = mean(np.array(rsa_nplus),0)
-        plot_nminus = mean(np.array(rsa_nminus),0)
-        plt.figure(figsize=(8, 4))
-        plt.plot(epochs.times, rsa_n)
-        plt.plot(epochs.times, rsa_nplus)
-        plt.plot(epochs.times, rsa_nminus)
-        plt.xlabel('time (s)')
-        plt.ylabel('RSA value')
-        plt.legend(['n','n+1', 'n-1'])
-        plt.savefig(my_path + f"/rsa/figures/session{session}_sub{subject}"+'_rsa_timecourse')
-        plt.close()
+            rsa_fname = my_path + f"/rsa/session{session}_sub{subject}_task{task}"+'_rsa_timecourse'
+            rsa_n=[]
+            rsa_nplus=[]
+            rsa_nminus=[]
+            with open(rsa_fname, "r") as file:
+                rsa_all = json.load(file)         
+                rsa_n.append(np.array(rsa_all['n']))
+                rsa_nplus.append(np.array(rsa_all['n+1']))
+                rsa_nminus.append(np.array(rsa_all['n-1']))
+            plot_n = np.mean(np.array(rsa_n),0)
+            plot_nplus = np.mean(np.array(rsa_nplus),0)
+            plot_nminus = np.mean(np.array(rsa_nminus),0)
+            plt.figure(figsize=(8, 4))
+            plt.plot(epochs.times, rsa_n)
+            plt.plot(epochs.times, rsa_nplus)
+            plt.plot(epochs.times, rsa_nminus)
+            plt.xlabel('time (s)')
+            plt.ylabel('RSA value')
+            plt.legend(['n','n+1', 'n-1'])
+            plt.savefig(my_path + f"/rsa/figures/session{session}_sub{subject}"+'_rsa_timecourse')
+            plt.close()
 
 
 #########################################################################
