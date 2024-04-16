@@ -15,35 +15,6 @@ from scipy import stats
 import gensim.downloader as api
 model = api.load("word2vec-google-news-300")
 
-def get_consecutive_contents(epochs, batch_size):
-    '''get epochs with three content words in a row'''
-    filtered_epochs_n = []
-    filtered_metadata_nminus = []
-    filtered_metadata_nplus = []
-    
-    num_epochs = len(epochs)
-    num_batches = num_epochs // batch_size + 1
-    
-    for batch_idx in tqdm(range(num_batches)):
-        start_idx = batch_idx * batch_size
-        end_idx = min(start_idx + batch_size, num_epochs)
-        
-        for i in range(start_idx + 1, end_idx - 1):
-            cat_i = epochs[i].metadata['word_category']
-            cat_i_minus = epochs[i-1].metadata['word_category']
-            cat_i_plus = epochs[i+1].metadata['word_category']
-            
-            if cat_i.item() == 'Content' and cat_i_minus.item() == 'Content' and cat_i_plus.item() == 'Content':
-                filtered_epochs_n.append(epochs[i])
-                filtered_metadata_nminus.append(epochs[i-1].metadata)
-                filtered_metadata_nplus.append(epochs[i+1].metadata)
-    
-    epochs_n = mne.concatenate_epochs(filtered_epochs_n)
-    metadata_nminus = pd.concat(filtered_metadata_nminus, axis=0)
-    metadata_nplus = pd.concat(filtered_metadata_nplus, axis=0)
-    
-    return epochs_n, metadata_nminus, metadata_nplus
-
 
 def get_wordfreq(metadata):
     '''get word frequency'''
@@ -131,7 +102,7 @@ def process_subject(sub, file_lists, my_path):
         epochs.apply_baseline((-0.2, 0))
         epochs = epochs[5:]
         
-        x = epochs[epochs.metadata['probs'] > 0.1] #only keep trials with probs > 0.1
+        epochs = epochs[epochs.metadata['probs'] >= 0.1] #only keep trials with probs > 0.1
              
         model_metadata = get_word2vec(epochs.metadata) #epoch 1 --> item 1; including all trials
         w2v_model_rdm = Model_DSM(model_metadata, var='w2v')
@@ -190,7 +161,7 @@ for sub in subIDs:
 
 # Convert the nested dictionary to a pandas DataFrame
 rsa_df = pd.DataFrame(rsa_results)
-fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec_allCloze.json'
+fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec_above10Cloze.json'
 rsa_df.to_json(fname)
 
 print('Done')
@@ -198,7 +169,7 @@ print('Done')
 # ----------------------------------------------------------------
 # Statistical tests: MNE-python function, cluster-based permutation
 # ----------------------------------------------------------------
-fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec_allCloze.json'
+fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec_above10Cloze.json'
 df = pd.read_json(fname)
 data_shuffled = np.vstack(df['rsa_shuffled'].to_list())
 
@@ -226,7 +197,7 @@ for cond in allconds:
         output[f'endT_cluster{sig_n}'] = round(timewind[good_clusters[sig_n][0][-1]])
     stat_output[cond] = output
 
-fname = 'S:/USERS/Lin/MASC-MEG/RSA/word2vec_allCloze_stats.pkl'
+fname = 'S:/USERS/Lin/MASC-MEG/RSA/word2vec_above10Cloze_stats.pkl'
 with open(fname,'wb') as pkl_file:
     pickle.dump(stat_output,pkl_file)
 
@@ -281,7 +252,7 @@ plt.plot(timewind,np.mean(np.vstack(df['rsa_shuffled'].to_numpy()),0),'k')
 # ----------------------------------------------------------------
 # Plot results: line plots
 # ----------------------------------------------------------------
-fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec.json'
+fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec_above10Cloze.json'
 df=pd.read_json(fname)
 timewind = np.linspace(-0.2,1.0,121)
 plt.plot(timewind,np.mean(np.vstack(df['lowCloze_preMEG_preW2V'].to_numpy()),0),'r',label='lowCloze_preMEG_preW2V')
@@ -306,7 +277,7 @@ plt.plot(timewind,np.mean(np.vstack(df['highCloze_cwMEG_preW2V'].to_numpy()),0),
 plt.show()
 
 
-fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec.json'
+fname='S:/USERS/Lin/MASC-MEG/RSA/word2vec_above10Cloze.json'
 df=pd.read_json(fname)
 timewind = np.linspace(-0.2,1.0,121)
 plt.plot(timewind,np.mean(np.vstack(df['allCloze_preMEG_preW2V'].to_numpy()),0),'m',label='allCloze_preMEG_preW2V')
@@ -314,53 +285,6 @@ plt.plot(timewind,np.mean(np.vstack(df['allCloze_preMEG_cwW2V'].to_numpy()),0),'
 plt.plot(timewind,np.mean(np.vstack(df['allCloze_cwMEG_cwW2V'].to_numpy()),0),'k',label='allCloze_cwMEG_cwW2V')
 plt.plot(timewind,np.mean(np.vstack(df['allCloze_cwMEG_preW2V'].to_numpy()),0),'r',label='allCloze_cwMEG_preW2V')
 plt.show()
-
-# ----------------------------------------------------------------
-# Statistical test at each time point independently
-# ----------------------------------------------------------------
-allconds = ['allCloze_preMEG_preW2V','allCloze_preMEG_cwW2V','allCloze_cwMEG_preW2V','allCloze_cwMEG_cwW2V']
-null_hypothesis_mean = 0
-tval = {}
-pval = {}
-for cond in allconds:
-    data = cond_rsa[cond]
-    t_statistic, p_value = stats.ttest_1samp(data, null_hypothesis_mean)
-    tval[cond]=t_statistic
-    pval[cond]=p_value
-data = cond_rsa['allCloze_cwMEG_preW2V']
-null_hypothesis_mean = 0
-t_statistic, p_value = stats.ttest_1samp(data, null_hypothesis_mean)
-
-
-###############################################################
-# plot RSA results for each subject and each session: word2vec
-subjects = range(1,12)
-for i in subjects:
-    subject = str(i).zfill(2)
-    rsa_subs = []
-    for session in range(1):
-        for task in range(4):
-            rsa_fname = my_path + f"/rsa/session{session}_sub{subject}_task{task}"+'_rsa_timecourse'
-            rsa_n=[]
-            rsa_nplus=[]
-            rsa_nminus=[]
-            with open(rsa_fname, "r") as file:
-                rsa_all = json.load(file)         
-                rsa_n.append(np.array(rsa_all['n']))
-                rsa_nplus.append(np.array(rsa_all['n+1']))
-                rsa_nminus.append(np.array(rsa_all['n-1']))
-            plot_n = np.mean(np.array(rsa_n),0)
-            plot_nplus = np.mean(np.array(rsa_nplus),0)
-            plot_nminus = np.mean(np.array(rsa_nminus),0)
-            plt.figure(figsize=(8, 4))
-            plt.plot(epochs.times, rsa_n)
-            plt.plot(epochs.times, rsa_nplus)
-            plt.plot(epochs.times, rsa_nminus)
-            plt.xlabel('time (s)')
-            plt.ylabel('RSA value')
-            plt.legend(['n','n+1', 'n-1'])
-            plt.savefig(my_path + f"/rsa/figures/session{session}_sub{subject}"+'_rsa_timecourse')
-            plt.close()
 
 
 #########################################################################
