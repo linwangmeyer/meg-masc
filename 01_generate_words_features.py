@@ -1,4 +1,4 @@
-# get all features for each word
+# get all features for each word: only including content words
 import json
 import mne
 import pandas as pd
