@@ -95,59 +95,6 @@ def generate_meg_dsms(select_epochs):
     return data_dsm
 
 
-def calculate_all_rdms_cw(epochs, condition_range):
-    '''calculate the RDMs for both MEG data and lexico-semantic variables for cw
-    epochs: mne-segmented epochs
-    condition_range: list of tuples to define the cloze ranges,
-    e.g. [(0.05, 0.20, 'low'), (0.20, 0.60, 'mid'), (0.60, 1.0, 'high')]
-    return: dictionary containing all RDMs'''
-    all_rdms = {}
-    metadata = epochs.metadata
-    for condition in condition_range:
-        x=(metadata['probs'] > condition[0]) & (metadata['probs'] <= condition[1])
-        sel_epochs = epochs[1:][x[1:]]#remove the first epoch (because there is no preceding trial for the first epoch)
-        meg_rdm = generate_meg_dsms(sel_epochs)
-        model_metadata = get_word2vec(sel_epochs.metadata)
-        w2v_model_rdm = Model_DSM(model_metadata, var='w2v')
-        freq_model_rdm = Model_DSM(model_metadata, var='frequency')
-        probs_model_rdm = Model_DSM(model_metadata, var='probs')
-        duration_model_rdm = Model_DSM(model_metadata, var='duration')
-
-        all_rdms[f'meg_{condition[2]}'] = meg_rdm
-        all_rdms[f'w2v_{condition[2]}'] = w2v_model_rdm
-        all_rdms[f'freq_{condition[2]}'] = freq_model_rdm
-        all_rdms[f'probs_{condition[2]}'] = probs_model_rdm
-        all_rdms[f'duration_{condition[2]}'] = duration_model_rdm
-    return all_rdms
-
-def calculate_all_rdms_precw(epochs, condition_range):
-    '''calculate the RDMs for both MEG data and lexico-semantic variables for words preceding cw (precw)
-    epochs: mne-segmented epochs
-    condition_range: list of tuples to define the cloze ranges,
-    e.g. [(0.05, 0.20, 'low'), (0.20, 0.60, 'mid'), (0.60, 1.0, 'high')]
-    return: dictionary containing all RDMs'''
-    all_rdms = {}
-    metadata = epochs.metadata
-    for condition in condition_range:
-        x=(metadata['probs'] > condition[0]) & (metadata['probs'] <= condition[1])
-        x_shift=x.copy().shift(-1) #selecting the immediate preceding epoch
-        epochs_shift = epochs[x_shift.fillna(False)]#remove the last epoch by setting it to False
-        meg_rdm = generate_meg_dsms(epochs_shift)
-        model_metadata = get_word2vec(epochs_shift.metadata)
-        w2v_model_rdm = Model_DSM(model_metadata, var='w2v')
-        freq_model_rdm = Model_DSM(model_metadata, var='frequency')
-        probs_model_rdm = Model_DSM(model_metadata, var='probs')
-        duration_model_rdm = Model_DSM(model_metadata, var='duration')
-
-        all_rdms[f'meg_{condition[2]}'] = meg_rdm
-        all_rdms[f'w2v_{condition[2]}'] = w2v_model_rdm
-        all_rdms[f'freq_{condition[2]}'] = freq_model_rdm
-        all_rdms[f'probs_{condition[2]}'] = probs_model_rdm
-        all_rdms[f'duration_{condition[2]}'] = duration_model_rdm
-    return all_rdms
-
-
-
 # correlate model and data RDMs
 def MEG_DSM_onevar(model_dsm, data_dsm):
     '''model_dsm: array of trialpair
